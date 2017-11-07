@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"hash/crc32"
+	"hash/fnv"
 	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type dirInfo struct {
@@ -21,41 +24,47 @@ type chanDirInfo struct {
 }
 
 var extesionMap = map[string]string{
-	".JPG":  ".JPG",
-	".JPEG": ".JPEG",
-	/* 	".PNG":     ".PNG",
-	   	".GIF":     ".GIF",
-	   	".RAW":     ".RAW",
-	   	".RW2":     ".RW2",
-	   	".TIF":     ".TIF",
-	   	".AI":      ".AI",
-	   	".MOV":     ".MOV",
-	   	".RAR":     ".RAR",
-	   	".MPG":     ".MPG",
-	   	".AFPHOTO": ".AFPHOTO",
-	   	".AVI":     ".AVI",
-	   	".M4V":     ".M4V",
-	   	".WMV":     ".WMV",
-	   	".MP4":     ".MP4",
-	   	".MTS":     ".MTS",
-	   	".CDR":     ".CDR",
-	   	".BMP":     ".BMP",
-	   	".NEF":     ".NEF",
-	   	".ZIP":     ".ZIP",
-	   	".3GP":     ".3GP",
-	   	".CR2":     ".CR2",
-	   	".PSD":     ".PSD", */
+	".JPG":     ".JPG",
+	".JPEG":    ".JPEG",
+	".PNG":     ".PNG",
+	".GIF":     ".GIF",
+	".RAW":     ".RAW",
+	".RW2":     ".RW2",
+	".TIF":     ".TIF",
+	".AI":      ".AI",
+	".MOV":     ".MOV",
+	".RAR":     ".RAR",
+	".MPG":     ".MPG",
+	".AFPHOTO": ".AFPHOTO",
+	".AVI":     ".AVI",
+	".M4V":     ".M4V",
+	".WMV":     ".WMV",
+	".MP4":     ".MP4",
+	".MTS":     ".MTS",
+	".CDR":     ".CDR",
+	".BMP":     ".BMP",
+	".NEF":     ".NEF",
+	".ZIP":     ".ZIP",
+	".3GP":     ".3GP",
+	".CR2":     ".CR2",
+	".PSD":     ".PSD",
 }
 
 var ignoreExtensionMap = map[string]int{}
 
 var crc32q = crc32.MakeTable(0xD5828281)
 
-var crc32FileMap = map[rune]map[string][]string{}
+var crc32FileMap = map[int]map[uint64][]string{}
+
+var jobtimer struct {
+	start  string
+	finish string
+}
 
 func main() {
+	jobtimer.start = time.Now().String()
 	c := make(chan chanDirInfo)
-	go mapDirectories("c:/Users/jarom/Pictures", c)
+	go mapDirectories("d:/Images", c)
 	<-c
 
 	for _, h := range crc32FileMap {
@@ -65,7 +74,9 @@ func main() {
 			}
 		}
 	}
+	jobtimer.finish = time.Now().String()
 
+	fmt.Println("jobtimer", jobtimer)
 	/* 	for k, v := range ignoreExtensionMap {
 		fmt.Printf("%-40s %-10d\n", k, v)
 	} */
@@ -86,13 +97,13 @@ func mapDirectories(path string, c chan chanDirInfo) {
 			c := make(chan chanDirInfo)
 			go mapDirectories(f, c)
 			dirinfo := <-c
-			fmt.Printf("\r checked files in %s\t\t\t\t\t", f)
+			//fmt.Printf("\r checked files in %s\t\t\t\t\t", f)
 			dirmap = append(dirmap, dirInfo{file.Name(), path, dirinfo.cnt})
 			dirmap = append(dirmap, dirinfo.dirs...)
 		} else {
 			ext := strings.ToUpper(filepath.Ext(f))
 			if _, ok := extesionMap[ext]; ok {
-				if file.Size() < 2000000 {
+				if file.Size() < 10000000 {
 					filecount++
 					handleFile(f)
 				}
@@ -108,24 +119,40 @@ func mapDirectories(path string, c chan chanDirInfo) {
 func handleFile(file string) {
 
 	//Read complete file
-	body, err := ioutil.ReadFile(file)
+	/* body, err := ioutil.ReadFile(file) */
+
+	b := make([]byte, 150000)
+
+	f, err := os.Open(file)
 
 	if err != nil {
 		fmt.Println("Error reading file", err)
 		return
 	}
+
+	_, err2 := f.Read(b)
+
+	if err2 != nil {
+		fmt.Printf("Error reading body to limited byte array in %s with error %s\n", file, err2)
+		return
+	}
+
 	//make a hash based on crc32
-	crc := string(crc32.Checksum(body, crc32q))
+	//crc := crc32.Checksum(b, crc32q)
+
+	crc := fingerprint(b)
+
+	f.Close()
 
 	//add to hashmap
 	addToMap(crc, file)
 }
 
-func addToMap(crc string, loc string) {
-	first := rune(string(crc)[0])
+func addToMap(crc uint64, loc string) {
+	first := int(crc % 25)
 
 	if _, ok := crc32FileMap[first]; !ok {
-		crc32FileMap[first] = map[string][]string{}
+		crc32FileMap[first] = map[uint64][]string{}
 	}
 
 	if _, ok := crc32FileMap[first][crc]; !ok {
@@ -133,4 +160,10 @@ func addToMap(crc string, loc string) {
 	}
 
 	crc32FileMap[first][crc] = append(crc32FileMap[first][crc], loc)
+}
+
+func fingerprint(b []byte) uint64 {
+	hash := fnv.New64a()
+	hash.Write(b)
+	return hash.Sum64()
 }
