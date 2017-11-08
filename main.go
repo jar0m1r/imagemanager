@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"hash/crc32"
 	"hash/fnv"
@@ -67,19 +68,52 @@ func main() {
 	go mapDirectories("d:/Images", c)
 	<-c
 
+	f, err := os.Create("d:/Images/dupe-result.txt")
+	if err != nil {
+		fmt.Println("Error creating result file", err)
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+
+	jobtimer.finish = time.Now().String()
+
+	_, err2 := w.WriteString(fmt.Sprintf("Job start-stop times: %v \r\n", jobtimer))
+	if err2 != nil {
+		fmt.Println("Error writing to buffer", err2)
+	}
+
+	_, err3 := w.WriteString("Found but ignored extensions:\r\n")
+	if err3 != nil {
+		fmt.Println("Error writing to buffer", err3)
+	}
+
+	for k, v := range ignoreExtensionMap {
+		_, err := w.WriteString(fmt.Sprintf("%-40s %-10d\r\n", k, v))
+		if err != nil {
+			fmt.Println("Error writing to buffer", err)
+		}
+	}
+
 	for _, h := range crc32FileMap {
 		for _, v := range h {
 			if len(v) > 1 {
-				fmt.Println(v)
+				_, err := w.WriteString(fmt.Sprintf("\r\n%s\r\n", v[0]))
+				if err != nil {
+					fmt.Println("Error writing to buffer", err)
+				}
+				for _, fl := range v[1:] {
+					_, err := w.WriteString(fmt.Sprintf("\t%s\r\n", fl))
+					if err != nil {
+						fmt.Println("Error writing to buffer", err)
+					}
+				}
 			}
 		}
 	}
-	jobtimer.finish = time.Now().String()
 
-	fmt.Println("jobtimer", jobtimer)
-	/* 	for k, v := range ignoreExtensionMap {
-		fmt.Printf("%-40s %-10d\n", k, v)
-	} */
+	w.Flush()
+
 }
 
 func mapDirectories(path string, c chan chanDirInfo) {
